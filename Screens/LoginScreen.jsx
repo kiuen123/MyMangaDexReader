@@ -1,6 +1,6 @@
 // tự động đăng nhập
 import React, { useEffect, useState } from 'react';
-import { View, Text, Button, StyleSheet, ToastAndroid } from 'react-native';
+import { View, Text, StyleSheet, ToastAndroid } from 'react-native';
 import { login } from '../API/mangadex';
 export default function LoginScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
@@ -10,7 +10,7 @@ export default function LoginScreen({ navigation }) {
     const autoLogin = async () => {
       setLoading(true);
       try {
-        const data = await login();
+        await login()
         // thông báo đăng nhập thành công
         ToastAndroid.show('Login successful!', ToastAndroid.SHORT);
         // Navigate to MainScreen after successful login
