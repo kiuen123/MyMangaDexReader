@@ -9,11 +9,6 @@ import ReaderScreen from './Screens/ReaderScreen';
 const Stack = createNativeStackNavigator();
 
 export default function App() {
-
-  // đầu tiền là ở màn hình đăng nhập
-  // sau khi đăng nhập thành công sẽ chuyển đến màn hình chính bao gồm các tab
-  // Home, TagListScreen, MangaDetailScreen, ReaderScreen sử dụng Tab Navigator
-  // và Stack Navigator để quản lý
   return (
     <NavigationContainer>
       <Stack.Navigator initialRouteName="Login">
