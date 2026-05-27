@@ -1,11 +1,7 @@
 package com.example.mymangadexreader.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -18,17 +14,19 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowBackIos
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ViewStream
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -36,9 +34,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
+import com.example.mymangadexreader.data.ChapterNavigationManager
 import com.example.mymangadexreader.ui.viewmodel.ReadingMode
 import com.example.mymangadexreader.ui.viewmodel.ReaderViewModel
 import kotlinx.coroutines.launch
+import kotlin.math.absoluteValue
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,6 +46,7 @@ fun ReaderScreen(
     chapterId: String,
     chapterTitle: String,
     onBack: () -> Unit,
+    onNavigateToChapter: (chapterId: String, chapterTitle: String) -> Unit = { _, _ -> },
     viewModel: ReaderViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -134,7 +135,13 @@ fun ReaderScreen(
                 uiState.readingMode == ReadingMode.SCROLL -> {
                     ScrollReadingMode(
                         pages = uiState.pages,
-                        onPageChange = { viewModel.setCurrentPage(it) }
+                        hasNextChapter = uiState.hasNextChapter,
+                        nextChapterTitle = uiState.nextChapterTitle,
+                        onPageChange = { viewModel.setCurrentPage(it) },
+                        onNextChapter = {
+                            val next = ChapterNavigationManager.nextChapter ?: return@ScrollReadingMode
+                            onNavigateToChapter(next.id, next.title)
+                        }
                     )
                 }
 
@@ -142,7 +149,13 @@ fun ReaderScreen(
                     PageReadingMode(
                         pages = uiState.pages,
                         currentPage = uiState.currentPage,
-                        onPageChange = { viewModel.setCurrentPage(it) }
+                        hasNextChapter = uiState.hasNextChapter,
+                        nextChapterTitle = uiState.nextChapterTitle,
+                        onPageChange = { viewModel.setCurrentPage(it) },
+                        onNextChapter = {
+                            val next = ChapterNavigationManager.nextChapter ?: return@PageReadingMode
+                            onNavigateToChapter(next.id, next.title)
+                        }
                     )
                 }
             }
@@ -183,7 +196,10 @@ fun ReaderScreen(
 @Composable
 private fun ScrollReadingMode(
     pages: List<String>,
-    onPageChange: (Int) -> Unit
+    hasNextChapter: Boolean,
+    nextChapterTitle: String,
+    onPageChange: (Int) -> Unit,
+    onNextChapter: () -> Unit
 ) {
     val listState = rememberLazyListState()
 
@@ -196,53 +212,82 @@ private fun ScrollReadingMode(
         modifier = Modifier.fillMaxSize()
     ) {
         itemsIndexed(pages) { index, pageUrl ->
-            ZoomablePage(url = pageUrl, pageNumber = index + 1, fillHeight = false)
+            PageImage(url = pageUrl, pageNumber = index + 1, fillHeight = false)
+        }
+        if (hasNextChapter) {
+            item {
+                NextChapterCard(nextChapterTitle = nextChapterTitle, onNavigate = onNextChapter)
+            }
         }
     }
 }
 
-// ─── Mode 2: Swipe page-by-page (LTR: vuốt trái → trang sau) ─────────────────
+// ─── Mode 2: Swipe page-by-page với hiệu ứng slide + fade ────────────────────
 @Composable
 private fun PageReadingMode(
     pages: List<String>,
     currentPage: Int,
-    onPageChange: (Int) -> Unit
+    hasNextChapter: Boolean,
+    nextChapterTitle: String,
+    onPageChange: (Int) -> Unit,
+    onNextChapter: () -> Unit
 ) {
+    // Tổng số "trang" = pages + 1 trang kết thúc (nếu có chương tiếp)
+    val totalPageCount = if (hasNextChapter) pages.size + 1 else pages.size
     val pagerState = rememberPagerState(
         initialPage = currentPage,
-        pageCount = { pages.size }
+        pageCount = { totalPageCount }
     )
     val scope = rememberCoroutineScope()
 
-    // Sync pager → ViewModel
+    // Sync pager → ViewModel (chỉ sync cho trang ảnh thực, không sync trang kết thúc)
     LaunchedEffect(pagerState.currentPage) {
-        onPageChange(pagerState.currentPage)
+        if (pagerState.currentPage < pages.size) {
+            onPageChange(pagerState.currentPage)
+        }
     }
 
-    // Sync ViewModel → pager (external navigation)
+    // Sync ViewModel → pager (nút prev/next)
     LaunchedEffect(currentPage) {
-        if (pagerState.currentPage != currentPage) {
+        if (pagerState.currentPage != currentPage && currentPage < pages.size) {
             pagerState.animateScrollToPage(currentPage)
         }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
 
-        // ── HorizontalPager: vuốt trái sang phải để chuyển trang ──
         HorizontalPager(
             state = pagerState,
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f)
+                .weight(1f),
+            pageSpacing = 16.dp,
+            beyondViewportPageCount = 1
         ) { pageIdx ->
-            ZoomablePage(
-                url = pages[pageIdx],
-                pageNumber = pageIdx + 1,
-                fillHeight = true
-            )
+            val pageOffset = (pagerState.currentPage - pageIdx) +
+                    pagerState.currentPageOffsetFraction
+            val scale = 1f - (pageOffset.absoluteValue * 0.12f).coerceIn(0f, 0.12f)
+            val alpha = 1f - (pageOffset.absoluteValue * 0.4f).coerceIn(0f, 0.4f)
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { scaleX = scale; scaleY = scale; this.alpha = alpha },
+                contentAlignment = Alignment.Center
+            ) {
+                if (pageIdx < pages.size) {
+                    PageImage(url = pages[pageIdx], pageNumber = pageIdx + 1, fillHeight = true)
+                } else {
+                    // Trang kết thúc — vuốt sang để đọc chương tiếp
+                    ChapterEndPage(
+                        nextChapterTitle = nextChapterTitle,
+                        onNavigate = onNextChapter
+                    )
+                }
+            }
         }
 
-        // ── Bottom bar: số trang + nút prev/next ──
+        // Bottom bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -251,7 +296,6 @@ private fun PageReadingMode(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Nút trang trước
             IconButton(
                 onClick = {
                     if (pagerState.currentPage > 0)
@@ -267,40 +311,37 @@ private fun PageReadingMode(
                 )
             }
 
-            // Chỉ số trang + progress bar
             Column(
                 modifier = Modifier.weight(1f),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                val displayPage = (pagerState.currentPage + 1).coerceAtMost(pages.size)
                 Text(
-                    text = "Trang ${pagerState.currentPage + 1} / ${pages.size}",
+                    text = "Trang $displayPage / ${pages.size}",
                     color = Color.White,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 LinearProgressIndicator(
-                    progress = { if (pages.size > 1) pagerState.currentPage / (pages.size - 1f) else 1f },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(3.dp),
+                    progress = { if (pages.size > 1) (pagerState.currentPage.coerceAtMost(pages.size - 1)) / (pages.size - 1f) else 1f },
+                    modifier = Modifier.fillMaxWidth().height(3.dp),
                     color = MaterialTheme.colorScheme.primary,
                     trackColor = Color.White.copy(alpha = 0.3f)
                 )
             }
 
-            // Nút trang sau
             IconButton(
                 onClick = {
-                    if (pagerState.currentPage < pages.size - 1)
+                    if (pagerState.currentPage < totalPageCount - 1)
                         scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
                 },
-                enabled = pagerState.currentPage < pages.size - 1
+                enabled = pagerState.currentPage < totalPageCount - 1
             ) {
                 Icon(
                     Icons.AutoMirrored.Filled.ArrowForwardIos,
                     contentDescription = "Trang sau",
-                    tint = if (pagerState.currentPage < pages.size - 1) Color.White else Color.White.copy(alpha = 0.3f),
+                    tint = if (pagerState.currentPage < totalPageCount - 1) Color.White else Color.White.copy(alpha = 0.3f),
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -308,78 +349,135 @@ private fun PageReadingMode(
     }
 }
 
-// ─── Shared zoomable page ─────────────────────────────────────────────────────
+// ─── Trang kết thúc chương (PAGE mode) ───────────────────────────────────────
 @Composable
-private fun ZoomablePage(
+private fun ChapterEndPage(
+    nextChapterTitle: String,
+    onNavigate: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        MaterialTheme.colorScheme.surface,
+                        MaterialTheme.colorScheme.primaryContainer
+                    )
+                )
+            )
+            .clickable { onNavigate() },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+            modifier = Modifier.padding(32.dp)
+        ) {
+            Icon(
+                Icons.Default.CheckCircle,
+                contentDescription = null,
+                modifier = Modifier.size(72.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = "Đã đọc xong chương này!",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp))
+            Text(
+                text = "Chương tiếp theo",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = nextChapterTitle,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            FilledTonalButton(
+                onClick = onNavigate,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.ArrowForward, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Đọc chương tiếp theo", fontWeight = FontWeight.SemiBold)
+            }
+            Text(
+                text = "hoặc nhấn vào bất kỳ đâu để tiếp tục",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+// ─── Card chương tiếp theo (SCROLL mode) ─────────────────────────────────────
+@Composable
+private fun NextChapterCard(
+    nextChapterTitle: String,
+    onNavigate: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        ),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                Icons.Default.CheckCircle,
+                contentDescription = null,
+                modifier = Modifier.size(40.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = "Đã đọc xong chương này!",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = nextChapterTitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center
+            )
+            Button(onClick = onNavigate, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.ArrowForward, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Đọc chương tiếp theo")
+            }
+        }
+    }
+}
+
+// ─── Ảnh trang đơn giản ──────────────────────────────────────────────────────
+@Composable
+private fun PageImage(
     url: String,
     pageNumber: Int,
     fillHeight: Boolean
 ) {
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offsetX by remember { mutableFloatStateOf(0f) }
-    var offsetY by remember { mutableFloatStateOf(0f) }
     var isLoading by remember { mutableStateOf(true) }
 
-    // Pinch-to-zoom + 2-finger pan: cooperates with HorizontalPager/LazyColumn (doesn't consume single-touch)
-    val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
-        scale = (scale * zoomChange).coerceIn(1f, 5f)
-        if (scale > 1f) {
-            offsetX += panChange.x
-            offsetY += panChange.y
-        } else {
-            offsetX = 0f
-            offsetY = 0f
-        }
-    }
-
-    // Double-tap state tracked manually
-    var lastTapMillis by remember { mutableLongStateOf(0L) }
-    var lastTapOffset by remember { mutableStateOf(Offset.Zero) }
-
     Box(
-        modifier = Modifier
-            .then(if (fillHeight) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
-            // Double-tap detection on the Box — uses requireUnconsumed=false so DOWN isn't blocked
-            .pointerInput(Unit) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    // Wait for finger up without consuming — returns null if drag takes over
-                    val up = waitForUpOrCancellation()
-                    if (up != null) {
-                        val now = System.currentTimeMillis()
-                        val dist = (down.position - lastTapOffset).getDistance()
-                        if (now - lastTapMillis < 350L && dist < 80f) {
-                            up.consume()
-                            if (scale > 1f) { scale = 1f; offsetX = 0f; offsetY = 0f }
-                            else { scale = 2.5f }
-                            lastTapMillis = 0L
-                        } else {
-                            lastTapMillis = now
-                            lastTapOffset = down.position
-                        }
-                    }
-                }
-            }
-            // Single-finger pan when zoomed in (key = scale>1f so it restarts when zoom changes)
-            .pointerInput(scale > 1f) {
-                if (scale > 1f) {
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        down.consume() // consume DOWN only when zoomed — prevents pager page flip
-                        var lastPos = down.position
-                        do {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            if (change.pressed) {
-                                change.consume()
-                                offsetX += change.position.x - lastPos.x
-                                offsetY += change.position.y - lastPos.y
-                                lastPos = change.position
-                            }
-                        } while (event.changes.any { it.pressed })
-                    }
-                }
-            },
+        modifier = if (fillHeight) Modifier.fillMaxSize() else Modifier.fillMaxWidth(),
         contentAlignment = Alignment.Center
     ) {
         AsyncImage(
@@ -387,18 +485,8 @@ private fun ZoomablePage(
             contentDescription = "Trang $pageNumber",
             contentScale = if (fillHeight) ContentScale.Fit else ContentScale.FillWidth,
             onState = { state -> isLoading = state is AsyncImagePainter.State.Loading },
-            modifier = Modifier
-                .then(
-                    if (fillHeight) Modifier.fillMaxSize()
-                    else Modifier.fillMaxWidth().wrapContentHeight()
-                )
-                .graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale,
-                    translationX = offsetX,
-                    translationY = offsetY
-                )
-                .transformable(state = transformableState)
+            modifier = if (fillHeight) Modifier.fillMaxSize()
+                       else Modifier.fillMaxWidth().wrapContentHeight()
         )
         if (isLoading) {
             CircularProgressIndicator(

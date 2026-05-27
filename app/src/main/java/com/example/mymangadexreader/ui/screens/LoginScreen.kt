@@ -1,5 +1,6 @@
 package com.example.mymangadexreader.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +23,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -55,20 +57,11 @@ fun LoginScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
-                Surface(
-                    shape = RoundedCornerShape(24.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(96.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "MD",
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            fontSize = 36.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                    }
-                }
+                Image(
+                    painter = painterResource(id = com.example.mymangadexreader.R.drawable.manga),
+                    contentDescription = "Logo",
+                    modifier = Modifier.size(110.dp)
+                )
                 Text(
                     text = "MangaDex Reader",
                     style = MaterialTheme.typography.headlineMedium,
@@ -99,20 +92,11 @@ fun LoginScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Logo / Branding
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(96.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "MD",
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        fontSize = 36.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                }
-            }
+            Image(
+                painter = painterResource(id = com.example.mymangadexreader.R.drawable.manga),
+                contentDescription = "Logo",
+                modifier = Modifier.size(110.dp)
+            )
 
             Spacer(modifier = Modifier.height(20.dp))
 

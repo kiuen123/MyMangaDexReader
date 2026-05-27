@@ -204,11 +204,42 @@ object MangaRepository {
         if (TokenManager.accessToken == null) {
             authMutex.withLock {
                 if (TokenManager.accessToken == null) {
-                    val u = TokenManager.savedUsername ?: return
-                    val p = TokenManager.savedPassword ?: return
-                    authenticate(u, p, remember = TokenManager.rememberLogin)
+                    // Try refresh token first
+                    val refreshed = tryRefreshToken()
+                    if (!refreshed) {
+                        // Fall back to username/password re-auth
+                        val u = TokenManager.savedUsername ?: return
+                        val p = TokenManager.savedPassword ?: return
+                        authenticate(u, p, remember = TokenManager.rememberLogin)
+                    }
                 }
             }
         }
     }
+
+    private suspend fun tryRefreshToken(): Boolean {
+        val rToken = TokenManager.refreshToken ?: return false
+        return try {
+            val response = authApi.refreshToken(
+                grantType = "refresh_token",
+                refreshToken = rToken,
+                clientId = CLIENT_ID,
+                clientSecret = CLIENT_SECRET
+            )
+            if (response.isSuccessful && response.body() != null) {
+                val body = response.body()!!
+                TokenManager.accessToken = body.accessToken
+                if (body.refreshToken != null) {
+                    TokenManager.refreshToken = body.refreshToken
+                }
+                true
+            } else {
+                TokenManager.refreshToken = null   // refresh token expired/invalid
+                false
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
 }
+

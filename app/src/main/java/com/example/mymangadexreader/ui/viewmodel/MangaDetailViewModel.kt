@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mymangadexreader.data.LanguageOption
 import com.example.mymangadexreader.data.LanguagePreference
+import com.example.mymangadexreader.data.ReadingHistoryManager
 import com.example.mymangadexreader.data.model.ChapterData
 import com.example.mymangadexreader.data.model.MangaData
 import com.example.mymangadexreader.data.model.MangaStatus
@@ -12,6 +13,8 @@ import com.example.mymangadexreader.data.repository.Result
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 
 data class MangaDetailUiState(
@@ -23,7 +26,10 @@ data class MangaDetailUiState(
     val selectedLanguage: LanguageOption = LanguagePreference.selectedLanguage,
     val availableLanguages: List<LanguageOption> = emptyList(),
     val mangaStatus: MangaStatus? = null,          // current user reading status
-    val isSettingStatus: Boolean = false
+    val isSettingStatus: Boolean = false,
+    val readChapterIds: Set<String> = emptySet(),   // chapters already read
+    val lastReadChapterId: String? = null,           // for "Continue Reading" button
+    val lastReadChapterTitle: String? = null
 )
 
 class MangaDetailViewModel : ViewModel() {
@@ -32,6 +38,29 @@ class MangaDetailViewModel : ViewModel() {
     val uiState: StateFlow<MangaDetailUiState> = _uiState.asStateFlow()
 
     private var currentMangaId: String? = null
+
+    init {
+        // Observe read chapters updates
+        ReadingHistoryManager.readChapterIdsFlow
+            .onEach { readIds ->
+                _uiState.value = _uiState.value.copy(readChapterIds = readIds)
+                updateLastReadChapter()
+            }
+            .launchIn(viewModelScope)
+    }
+
+    private fun updateLastReadChapter() {
+        val chapters = _uiState.value.chapters
+        if (chapters.isEmpty()) return
+        val readIds = _uiState.value.readChapterIds
+        // Find the last read chapter from the chapter list (highest index read)
+        val lastReadIndex = chapters.indexOfLast { it.id in readIds }
+        val lastRead = if (lastReadIndex >= 0) chapters[lastReadIndex] else null
+        _uiState.value = _uiState.value.copy(
+            lastReadChapterId = lastRead?.id,
+            lastReadChapterTitle = lastRead?.attributes?.getDisplayTitle()
+        )
+    }
 
     fun loadManga(mangaId: String) {
         if (currentMangaId == mangaId && _uiState.value.manga != null) return
@@ -99,6 +128,7 @@ class MangaDetailViewModel : ViewModel() {
                 chapters = chapters,
                 isChaptersLoading = false
             )
+            updateLastReadChapter()
         }
     }
 }

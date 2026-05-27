@@ -86,7 +86,13 @@ fun AppNavGraph() {
             ReaderScreen(
                 chapterId = chapterId,
                 chapterTitle = chapterTitle,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onNavigateToChapter = { newId, newTitle ->
+                    // Replace current reader with new chapter (no extra back stack)
+                    navController.navigate(Routes.reader(newId, newTitle)) {
+                        popUpTo(Routes.READER) { inclusive = true }
+                    }
+                }
             )
         }
     }

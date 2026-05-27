@@ -2,6 +2,8 @@ package com.example.mymangadexreader.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.mymangadexreader.data.AppPreferences
+import com.example.mymangadexreader.data.ChapterNavigationManager
 import com.example.mymangadexreader.data.ReadingHistoryManager
 import com.example.mymangadexreader.data.repository.MangaRepository
 import com.example.mymangadexreader.data.repository.Result
@@ -19,7 +21,10 @@ data class ReaderUiState(
     val error: String? = null,
     val chapterTitle: String = "",
     val currentPage: Int = 0,
-    val readingMode: ReadingMode = ReadingMode.SCROLL
+    val readingMode: ReadingMode = ReadingMode.valueOf(AppPreferences.readingMode),
+    val hasNextChapter: Boolean = false,
+    val nextChapterTitle: String = "",
+    val hasPrevChapter: Boolean = false
 )
 
 class ReaderViewModel : ViewModel() {
@@ -29,11 +34,17 @@ class ReaderViewModel : ViewModel() {
 
     fun loadChapter(chapterId: String, chapterTitle: String) {
         val currentMode = _uiState.value.readingMode
+        ChapterNavigationManager.setCurrentChapter(chapterId)
+        val next = ChapterNavigationManager.nextChapter
+        val prev = ChapterNavigationManager.prevChapter
         _uiState.value = ReaderUiState(
             chapterId = chapterId,
             isLoading = true,
             chapterTitle = chapterTitle,
-            readingMode = currentMode
+            readingMode = currentMode,
+            hasNextChapter = next != null,
+            nextChapterTitle = next?.title ?: "",
+            hasPrevChapter = prev != null
         )
         viewModelScope.launch {
             when (val result = MangaRepository.getChapterPages(chapterId)) {
@@ -42,23 +53,16 @@ class ReaderViewModel : ViewModel() {
                     val pageUrls = atHome.chapter.data.map { fileName ->
                         "${atHome.baseUrl}/data/${atHome.chapter.hash}/$fileName"
                     }
-                    _uiState.value = ReaderUiState(
-                        chapterId = chapterId,
+                    _uiState.value = _uiState.value.copy(
                         pages = pageUrls,
-                        isLoading = false,
-                        chapterTitle = chapterTitle,
-                        readingMode = currentMode
+                        isLoading = false
                     )
-                    // Update total pages in history
                     ReadingHistoryManager.updateProgress(chapterId, 0, pageUrls.size)
                 }
                 is Result.Error -> {
-                    _uiState.value = ReaderUiState(
-                        chapterId = chapterId,
+                    _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        error = result.message,
-                        chapterTitle = chapterTitle,
-                        readingMode = currentMode
+                        error = result.message
                     )
                 }
                 else -> {}
@@ -81,6 +85,7 @@ class ReaderViewModel : ViewModel() {
         val newMode = if (_uiState.value.readingMode == ReadingMode.SCROLL)
             ReadingMode.PAGE else ReadingMode.SCROLL
         _uiState.value = _uiState.value.copy(readingMode = newMode)
+        AppPreferences.readingMode = newMode.name   // persist
     }
 
     fun goToNextPage() {

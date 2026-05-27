@@ -6,9 +6,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.example.mymangadexreader.data.ChapterNavigationManager
 import com.example.mymangadexreader.data.model.ChapterData
 import com.example.mymangadexreader.data.model.MangaData
 import com.example.mymangadexreader.data.model.MangaStatus
@@ -188,6 +192,9 @@ fun MangaDetailScreen(
                         isChaptersLoading = uiState.isChaptersLoading,
                         selectedLanguageCode = uiState.selectedLanguage.code,
                         selectedLanguageDisplay = "${uiState.selectedLanguage.flag} ${uiState.selectedLanguage.displayName}",
+                        readChapterIds = uiState.readChapterIds,
+                        lastReadChapterId = uiState.lastReadChapterId,
+                        lastReadChapterTitle = uiState.lastReadChapterTitle,
                         onChapterClick = onChapterClick,
                         onPickLanguage = { showLangPicker = true }
                     )
@@ -204,6 +211,9 @@ private fun MangaDetailContent(
     isChaptersLoading: Boolean,
     selectedLanguageCode: String,
     selectedLanguageDisplay: String,
+    readChapterIds: Set<String>,
+    lastReadChapterId: String?,
+    lastReadChapterTitle: String?,
     onChapterClick: (chapterId: String, chapterTitle: String) -> Unit,
     onPickLanguage: () -> Unit
 ) {
@@ -277,6 +287,25 @@ private fun MangaDetailContent(
             }
         }
 
+        // Continue reading card
+        if (lastReadChapterId != null && lastReadChapterTitle != null) {
+            item {
+                ContinueReadingCard(
+                    chapterTitle = lastReadChapterTitle,
+                    onClick = {
+                        val chapter = chapters.firstOrNull { it.id == lastReadChapterId } ?: return@ContinueReadingCard
+                        ChapterNavigationManager.setChapterList(
+                            list = chapters.map { c ->
+                                ChapterNavigationManager.ChapterInfo(c.id, c.attributes.getDisplayTitle())
+                            },
+                            clickedChapterId = chapter.id
+                        )
+                        onChapterClick(chapter.id, chapter.attributes.getDisplayTitle())
+                    }
+                )
+            }
+        }
+
         // Chapter list header with language selector
         item {
             HorizontalDivider()
@@ -332,7 +361,15 @@ private fun MangaDetailContent(
             items(chapters, key = { it.id }) { chapter ->
                 ChapterItem(
                     chapter = chapter,
+                    isRead = chapter.id in readChapterIds,
                     onClick = {
+                        // Save chapter list for in-reader chapter navigation
+                        ChapterNavigationManager.setChapterList(
+                            list = chapters.map { c ->
+                                ChapterNavigationManager.ChapterInfo(c.id, c.attributes.getDisplayTitle())
+                            },
+                            clickedChapterId = chapter.id
+                        )
                         // Save reading history before navigating
                         ReadingHistoryManager.saveEntry(
                             ReadingHistoryEntry(
@@ -354,21 +391,97 @@ private fun MangaDetailContent(
 }
 
 @Composable
-private fun ChapterItem(chapter: ChapterData, onClick: () -> Unit) {
-    Surface(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
+private fun ContinueReadingCard(
+    chapterTitle: String,
+    onClick: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.MenuBook,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Tiếp tục đọc",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = chapterTitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Icon(
+                imageVector = Icons.Default.PlayArrow,
+                contentDescription = "Tiếp tục",
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChapterItem(chapter: ChapterData, isRead: Boolean, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick,
+        color = if (isRead)
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        else
+            MaterialTheme.colorScheme.surface
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = chapter.attributes.getDisplayTitle(),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = chapter.attributes.getDisplayTitle(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = if (isRead)
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        else
+                            MaterialTheme.colorScheme.onSurface
+                    )
+                    if (isRead) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Đã đọc",
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
                 chapter.attributes.publishAt?.let {
                     Text(
                         text = it.take(10),
