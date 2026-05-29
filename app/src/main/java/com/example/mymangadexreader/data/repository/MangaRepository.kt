@@ -102,14 +102,40 @@ object MangaRepository {
         ensureAuthenticated()
         val lang = if (language == null || language == "all") emptyList() else listOf(language)
         try {
-            val response = api.getMangaFeed(mangaId, languages = lang)
-            if (response.isSuccessful && response.body() != null) {
-                Result.Success(response.body()!!)
-            } else {
-                Result.Error("Error: ${response.code()} ${response.message()}")
+            val allChapters = mutableListOf<com.example.mymangadexreader.data.model.ChapterData>()
+            val pageSize = 500
+            var offset = 0
+            var total = Int.MAX_VALUE
+
+            while (offset < total) {
+                val response = api.getMangaFeed(
+                    mangaId,
+                    limit = pageSize,
+                    offset = offset,
+                    languages = lang
+                )
+                if (response.isSuccessful && response.body() != null) {
+                    val body = response.body()!!
+                    total = body.total
+                    allChapters.addAll(body.data)
+                    offset += body.data.size
+                    if (body.data.isEmpty()) break
+                } else {
+                    return@withContext Result.Error("Lỗi tải chương: ${response.code()} ${response.message()}")
+                }
             }
+
+            Result.Success(
+                ChapterListResponse(
+                    result = "ok",
+                    data = allChapters,
+                    limit = pageSize,
+                    offset = 0,
+                    total = allChapters.size
+                )
+            )
         } catch (e: Exception) {
-            Result.Error(e.localizedMessage ?: "Network error")
+            Result.Error(e.localizedMessage ?: "Lỗi mạng")
         }
     }
 

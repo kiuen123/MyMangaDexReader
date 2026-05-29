@@ -23,13 +23,15 @@ data class MangaDetailUiState(
     val isLoading: Boolean = false,
     val isChaptersLoading: Boolean = false,
     val error: String? = null,
+    val chaptersError: String? = null,             // lỗi riêng khi tải danh sách chương
     val selectedLanguage: LanguageOption = LanguagePreference.selectedLanguage,
     val availableLanguages: List<LanguageOption> = emptyList(),
     val mangaStatus: MangaStatus? = null,          // current user reading status
     val isSettingStatus: Boolean = false,
     val readChapterIds: Set<String> = emptySet(),   // chapters already read
     val lastReadChapterId: String? = null,           // for "Continue Reading" button
-    val lastReadChapterTitle: String? = null
+    val lastReadChapterTitle: String? = null,
+    val sortDescending: Boolean = true              // true = mới nhất trên đầu
 )
 
 class MangaDetailViewModel : ViewModel() {
@@ -110,6 +112,10 @@ class MangaDetailViewModel : ViewModel() {
         }
     }
 
+    fun toggleSortOrder() {
+        _uiState.value = _uiState.value.copy(sortDescending = !_uiState.value.sortDescending)
+    }
+
     fun setLanguage(lang: LanguageOption) {
         val mangaId = currentMangaId ?: return
         _uiState.value = _uiState.value.copy(selectedLanguage = lang)
@@ -117,18 +123,29 @@ class MangaDetailViewModel : ViewModel() {
     }
 
     private fun loadChapters(mangaId: String, langCode: String) {
-        _uiState.value = _uiState.value.copy(isChaptersLoading = true)
+        _uiState.value = _uiState.value.copy(isChaptersLoading = true, chaptersError = null)
         viewModelScope.launch {
             val chaptersResult = MangaRepository.getMangaChapters(mangaId, langCode)
-            val chapters = when (chaptersResult) {
-                is Result.Success -> chaptersResult.data.data
-                else -> emptyList()
+            when (chaptersResult) {
+                is Result.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        chapters = chaptersResult.data.data,
+                        isChaptersLoading = false,
+                        chaptersError = null
+                    )
+                    updateLastReadChapter()
+                }
+                is Result.Error -> {
+                    _uiState.value = _uiState.value.copy(
+                        chapters = emptyList(),
+                        isChaptersLoading = false,
+                        chaptersError = chaptersResult.message
+                    )
+                }
+                else -> {
+                    _uiState.value = _uiState.value.copy(isChaptersLoading = false)
+                }
             }
-            _uiState.value = _uiState.value.copy(
-                chapters = chapters,
-                isChaptersLoading = false
-            )
-            updateLastReadChapter()
         }
     }
 }

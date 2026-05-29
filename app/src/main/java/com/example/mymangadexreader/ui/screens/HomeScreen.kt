@@ -51,11 +51,11 @@ fun AllMangaTab(
         )
     }
 
-    val shouldLoadMore by remember {
+    val shouldLoadMore by remember(uiState.mangaList.size, uiState.hasMore, uiState.isLoadingMore) {
         derivedStateOf {
             val totalItems = uiState.mangaList.size
             val visibleItems = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            visibleItems >= totalItems - 4 && totalItems > 0
+            visibleItems >= totalItems - 4 && totalItems > 0 && uiState.hasMore && !uiState.isLoadingMore
         }
     }
 
@@ -181,6 +181,14 @@ internal fun MangaCard(
 ) {
     val coverRel = manga.relationships.firstOrNull { it.type == "cover_art" }
     val coverUrl = coverRel?.attributes?.fileName?.let { buildCoverUrl(manga.id, it) }
+    val selectedLang = LanguagePreference.selectedLanguage
+    val availableLangs = manga.attributes.availableTranslatedLanguages
+        ?.filterNotNull() ?: emptyList()
+    val lastChapter = manga.attributes.lastChapter
+
+    // When a specific language is selected the list is already API-filtered by that
+    // language, so we can always show its flag. Only "all" uses availableTranslatedLanguages.
+    val langFlag: String? = if (selectedLang.code == "all") null else selectedLang.flag
 
     Card(
         modifier = Modifier
@@ -207,12 +215,56 @@ internal fun MangaCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                manga.attributes.status?.let { status ->
-                    Text(
-                        text = status.replaceFirstChar { it.uppercase() },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                // Chapter + language row
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.padding(top = 2.dp)
+                ) {
+                    if (!lastChapter.isNullOrBlank()) {
+                        Text(
+                            text = "Ch.$lastChapter",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    if (selectedLang.code == "all") {
+                        // Show up to 4 flag emojis of available languages
+                        val flags = availableLangs.take(4).mapNotNull { code ->
+                            LanguagePreference.supportedLanguages
+                                .firstOrNull { it.code == code }?.flag
+                        }
+                        if (flags.isNotEmpty()) {
+                            Text(
+                                text = flags.joinToString(""),
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    } else if (langFlag != null) {
+                        Text(
+                            text = langFlag,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                    manga.attributes.status?.let { status ->
+                        if (lastChapter.isNullOrBlank() && langFlag == null) {
+                            Text(
+                                text = status.replaceFirstChar { it.uppercase() },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+                // Show status only when chapter info is present
+                if (!lastChapter.isNullOrBlank() || langFlag != null) {
+                    manga.attributes.status?.let { status ->
+                        Text(
+                            text = status.replaceFirstChar { it.uppercase() },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }

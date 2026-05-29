@@ -23,7 +23,9 @@ data class MangaAttributes(
     val contentRating: String?,
     val tags: List<Tag>?,
     val year: Int?,
-    val state: String?
+    val state: String?,
+    val lastChapter: String?,
+    val availableTranslatedLanguages: List<String?>?
 ) {
     fun getTitle(): String =
         title["en"] ?: title.values.firstOrNull() ?: "Unknown Title"

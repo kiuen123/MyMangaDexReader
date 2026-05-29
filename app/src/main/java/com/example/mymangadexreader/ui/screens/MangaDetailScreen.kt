@@ -12,6 +12,9 @@ import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SortByAlpha
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,6 +34,8 @@ import com.example.mymangadexreader.data.model.MangaStatus
 import com.example.mymangadexreader.data.ReadingHistoryEntry
 import com.example.mymangadexreader.data.ReadingHistoryManager
 import com.example.mymangadexreader.data.model.buildCoverUrl
+import com.example.mymangadexreader.data.LanguagePreference
+import com.example.mymangadexreader.data.LanguageOption
 import com.example.mymangadexreader.ui.components.LanguagePickerDialog
 import com.example.mymangadexreader.ui.viewmodel.MangaDetailViewModel
 
@@ -190,13 +195,17 @@ fun MangaDetailScreen(
                         manga = uiState.manga!!,
                         chapters = uiState.chapters,
                         isChaptersLoading = uiState.isChaptersLoading,
+                        chaptersError = uiState.chaptersError,
                         selectedLanguageCode = uiState.selectedLanguage.code,
                         selectedLanguageDisplay = "${uiState.selectedLanguage.flag} ${uiState.selectedLanguage.displayName}",
                         readChapterIds = uiState.readChapterIds,
                         lastReadChapterId = uiState.lastReadChapterId,
                         lastReadChapterTitle = uiState.lastReadChapterTitle,
+                        sortDescending = uiState.sortDescending,
+                        onToggleSort = { viewModel.toggleSortOrder() },
                         onChapterClick = onChapterClick,
-                        onPickLanguage = { showLangPicker = true }
+                        onPickLanguage = { showLangPicker = true },
+                        onSetLanguage = { lang -> viewModel.setLanguage(lang) }
                     )
                 }
             }
@@ -209,17 +218,33 @@ private fun MangaDetailContent(
     manga: MangaData,
     chapters: List<ChapterData>,
     isChaptersLoading: Boolean,
+    chaptersError: String?,
     selectedLanguageCode: String,
     selectedLanguageDisplay: String,
     readChapterIds: Set<String>,
     lastReadChapterId: String?,
     lastReadChapterTitle: String?,
+    sortDescending: Boolean,
+    onToggleSort: () -> Unit,
     onChapterClick: (chapterId: String, chapterTitle: String) -> Unit,
-    onPickLanguage: () -> Unit
+    onPickLanguage: () -> Unit,
+    onSetLanguage: (LanguageOption) -> Unit
 ) {
     val coverRel = manga.relationships.firstOrNull { it.type == "cover_art" }
     val coverUrl = coverRel?.attributes?.fileName?.let { buildCoverUrl(manga.id, it, 512) }
     val author = manga.relationships.firstOrNull { it.type == "author" }?.attributes?.name
+
+    // Chapters sorted ascending by chapter number (for navigation)
+    val navChapters = remember(chapters) {
+        chapters.sortedBy { it.attributes.chapter?.toFloatOrNull() ?: Float.MAX_VALUE }
+    }
+    // Chapters sorted for display based on user preference
+    val displayChapters = remember(chapters, sortDescending) {
+        if (sortDescending)
+            chapters.sortedByDescending { it.attributes.chapter?.toFloatOrNull() ?: -1f }
+        else
+            chapters.sortedBy { it.attributes.chapter?.toFloatOrNull() ?: Float.MAX_VALUE }
+    }
 
     LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
         // Cover + Info
@@ -293,9 +318,9 @@ private fun MangaDetailContent(
                 ContinueReadingCard(
                     chapterTitle = lastReadChapterTitle,
                     onClick = {
-                        val chapter = chapters.firstOrNull { it.id == lastReadChapterId } ?: return@ContinueReadingCard
+                        val chapter = navChapters.firstOrNull { it.id == lastReadChapterId } ?: return@ContinueReadingCard
                         ChapterNavigationManager.setChapterList(
-                            list = chapters.map { c ->
+                            list = navChapters.map { c ->
                                 ChapterNavigationManager.ChapterInfo(c.id, c.attributes.getDisplayTitle())
                             },
                             clickedChapterId = chapter.id
@@ -306,7 +331,7 @@ private fun MangaDetailContent(
             }
         }
 
-        // Chapter list header with language selector
+        // Chapter list header with language selector + sort
         item {
             HorizontalDivider()
             Row(
@@ -318,25 +343,36 @@ private fun MangaDetailContent(
                     Icon(Icons.Default.Bookmark, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.width(8.dp))
                     val isAllLanguages = selectedLanguageCode == "all"
+                    val langFlag = selectedLanguageDisplay.trim().split(" ").firstOrNull() ?: ""
                     Text(
                         text = when {
                             isChaptersLoading -> "Đang tải..."
                             isAllLanguages -> "Danh sách chương"
-                            else -> "${chapters.size} chương • $selectedLanguageDisplay"
+                            else -> "${chapters.size} chương • $langFlag"
                         },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
-                // Per-manga language picker
-                OutlinedButton(
-                    onClick = onPickLanguage,
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                    modifier = Modifier.height(34.dp)
-                ) {
-                    Text(selectedLanguageDisplay, style = MaterialTheme.typography.labelSmall)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(Icons.Default.Language, contentDescription = null, modifier = Modifier.size(14.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // Sort order toggle button
+                    IconButton(onClick = onToggleSort, modifier = Modifier.size(34.dp)) {
+                        Icon(
+                            imageVector = if (sortDescending) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                            contentDescription = if (sortDescending) "Mới nhất trước" else "Cũ nhất trước",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    // Per-manga language picker
+                    OutlinedButton(
+                        onClick = onPickLanguage,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        Text(selectedLanguageDisplay, style = MaterialTheme.typography.labelSmall)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(Icons.Default.Language, contentDescription = null, modifier = Modifier.size(14.dp))
+                    }
                 }
             }
             HorizontalDivider()
@@ -349,23 +385,72 @@ private fun MangaDetailContent(
                     CircularProgressIndicator(modifier = Modifier.size(32.dp))
                 }
             }
+        } else if (chaptersError != null) {
+            item {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "⚠️ Không thể tải danh sách chương:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = chaptersError,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         } else if (chapters.isEmpty()) {
             item {
-                Text(
-                    text = "Không có chương nào cho ngôn ngữ \"$selectedLanguageDisplay\".",
-                    modifier = Modifier.padding(16.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    Text(
+                        text = "Không tìm thấy chương cho ngôn ngữ \"$selectedLanguageDisplay\".",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    // Show available languages from manga metadata
+                    val availLangs = remember(manga.id) {
+                        manga.attributes.availableTranslatedLanguages
+                            ?.filterNotNull()
+                            ?.mapNotNull { code ->
+                                LanguagePreference.supportedLanguages.firstOrNull { it.code == code }
+                            }
+                            ?: emptyList()
+                    }
+                    if (availLangs.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "Ngôn ngữ có thể có chương:",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            availLangs.forEach { lang ->
+                                SuggestionChip(
+                                    onClick = { onSetLanguage(lang) },
+                                    label = { Text("${lang.flag} ${lang.displayName}") }
+                                )
+                            }
+                        }
+                    }
+                }
             }
         } else {
-            items(chapters, key = { it.id }) { chapter ->
+            items(displayChapters, key = { it.id }) { chapter ->
                 ChapterItem(
                     chapter = chapter,
                     isRead = chapter.id in readChapterIds,
                     onClick = {
-                        // Save chapter list for in-reader chapter navigation
+                        // Save chapter list (ascending order) for in-reader chapter navigation
                         ChapterNavigationManager.setChapterList(
-                            list = chapters.map { c ->
+                            list = navChapters.map { c ->
                                 ChapterNavigationManager.ChapterInfo(c.id, c.attributes.getDisplayTitle())
                             },
                             clickedChapterId = chapter.id

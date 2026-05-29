@@ -31,6 +31,7 @@ fun RecentlyReadTab(
     viewModel: RecentlyReadViewModel = viewModel()
 ) {
     val entries by viewModel.entries.collectAsStateWithLifecycle()
+    val loadingMangaIds by viewModel.loadingMangaIds.collectAsStateWithLifecycle()
 
     if (entries.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -62,7 +63,12 @@ fun RecentlyReadTab(
             items(entries, key = { it.mangaId }) { entry ->
                 RecentlyReadItem(
                     entry = entry,
-                    onContinueClick = { onChapterClick(entry.chapterId, entry.chapterTitle) },
+                    isLoading = entry.mangaId in loadingMangaIds,
+                    onContinueClick = {
+                        viewModel.continueReading(entry) { id, title ->
+                            onChapterClick(id, title)
+                        }
+                    },
                     onMangaClick = { onMangaClick(entry.mangaId) }
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
@@ -74,6 +80,7 @@ fun RecentlyReadTab(
 @Composable
 private fun RecentlyReadItem(
     entry: ReadingHistoryEntry,
+    isLoading: Boolean,
     onContinueClick: () -> Unit,
     onMangaClick: () -> Unit
 ) {
@@ -152,16 +159,24 @@ private fun RecentlyReadItem(
                 )
             }
 
-            // Continue button
+            // Continue button (shows spinner while loading chapters)
             FilledTonalIconButton(
                 onClick = onContinueClick,
-                modifier = Modifier.size(44.dp)
+                modifier = Modifier.size(44.dp),
+                enabled = !isLoading
             ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "Tiếp tục đọc",
-                    modifier = Modifier.size(22.dp)
-                )
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Tiếp tục đọc",
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
         }
     }
@@ -177,4 +192,3 @@ private fun formatRelativeTime(timestamp: Long): String {
         else -> SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(timestamp))
     }
 }
-
